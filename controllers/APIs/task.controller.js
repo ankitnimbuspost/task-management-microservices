@@ -289,7 +289,7 @@ module.exports.updateTask = async function(req,res){
             updateData.priority = req.body['priority'];
         if(req.body['task_status'])
             updateData.task_status = req.body['task_status']
-
+        updateData.updated = Math.floor(Date.now()/1000);
         let prev_data = await TaskModel.findOne({_id:req.body['id']});
         let result = await TaskModel.findOneAndUpdate({_id:req.body['id']},{"$set":updateData},{new:true});
         // Create Log 
@@ -303,11 +303,6 @@ module.exports.updateTask = async function(req,res){
             res.status(httpCode.OK).json({code: httpCode.OK,message:"Task updated successfully.",data:result})
     }
 
-
-}
-
-//This Function update task status
-module.exports.updateTask = async function(req,res){
 
 }
 
@@ -402,3 +397,16 @@ module.exports.getTaskList = async function(req,res){
     }
 }
 
+//Get Singal Task 
+module.exports.getSingalTask = async function(req,res){
+    let task_id = req.params['task_id'] ?? '';
+    if(task_id=='' || task_id==null)
+        return res.status(httpCode.BAD_REQUEST).json({code:httpCode.BAD_REQUEST,"message":"Task ID field is required."});
+    else{
+        let data = await TaskModel.getFullTaskInfo(task_id);
+        if(data)
+            res.status(httpCode.OK).json({code: httpCode.OK,message:"Tasks Details.",data:data});
+        else
+            return res.status(httpCode.BAD_REQUEST).json({code:httpCode.BAD_REQUEST,"message":"Invalid Task ID."});
+    }
+}

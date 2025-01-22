@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const config = require("../config/config");
+const CommonHelper = require("../helpers/common.helper.js")
 
 const taskSchema = mongoose.Schema({
     task_id:{
@@ -99,6 +100,23 @@ taskSchema.statics.checkTaskExists = async function(task_id){
     try {
         const task = await this.findOne({_id:task_id});
         return !!task;
+    } catch (error) {
+        return false;
+    }
+}
+
+//Get Task Full Details (All task info)
+taskSchema.statics.getFullTaskInfo = async function(task_id){
+    try {
+        const task = await this.findOne({_id:task_id}).populate({path:"project_id","select":'project_name _id'})
+                .populate({path:"added_by","select":"f_name l_name"}).populate({path:"owners","select":"f_name l_name"}).lean();
+        if(task==null)
+            return false;
+        task.created = CommonHelper.converToDate(task.created);
+        task.updated = CommonHelper.converToDate(task.updated);
+        task.start_date = CommonHelper.converToDate(task.start_date);
+        task.due_date = CommonHelper.converToDate(task.due_date);
+        return task;
     } catch (error) {
         return false;
     }

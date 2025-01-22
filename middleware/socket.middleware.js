@@ -1,9 +1,6 @@
 const jwt = require('jsonwebtoken');
 
 module.exports.authenticateUsers = async function (socket, next) {
-
-    
-    
     if (socket.handshake.headers.auth) {
         jwt.verify(socket.handshake.headers.auth, process.env.APP_KEY, (err, decoded) => {
             if (err) {

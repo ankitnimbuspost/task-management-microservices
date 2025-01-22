@@ -13,4 +13,5 @@ route.get("/get-task-status",TaskController.getTaskStatus);
 route.get("/get-projects",TaskController.getProjects);
 route.post("/assign-project",TaskController.assignProject);
 route.post("/get-task-list",TaskController.getTaskList);
+route.get("/get-task/:task_id",TaskController.getSingalTask);
 module.exports = route;
