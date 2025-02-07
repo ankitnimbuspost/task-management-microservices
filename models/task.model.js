@@ -118,6 +118,7 @@ taskSchema.statics.getFullTaskInfo = async function(task_id){
         task.due_date = CommonHelper.converToDate(task.due_date);
         return task;
     } catch (error) {
+        console.log(error.message);
         return false;
     }
 }
