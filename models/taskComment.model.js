@@ -22,7 +22,7 @@ const commentSchema = mongoose.Schema({
     created:{
         type:Number,
         required:true,
-        default : Math.floor(Date.now()/1000),
+        default: () => Math.floor(Date.now() / 1000),
     },
     updated:{
         type:Number,

@@ -3,6 +3,7 @@ const route = express.Router();
 const APIMiddleware = require("../middleware/api.middleware");
 const QueueController = require("../controllers/APIs/queue.controller");
 const TaskController = require("../controllers/APIs/task.controller")
+const TaskCommentController = require("../controllers/APIs/task-comment.controller")
 route.use("/",APIMiddleware.checkJWTToken);
 
 route.get("/test",QueueController.test);
@@ -14,5 +15,6 @@ route.get("/get-projects",TaskController.getProjects);
 route.post("/assign-project",TaskController.assignProject);
 route.post("/get-task-list",TaskController.getTaskList);
 route.get("/get-task/:task_id",TaskController.getSingalTask);
-route.post("/task-comment-create-update",TaskController.commentCreateUpdate);
+route.post("/task-comment-create-update",TaskCommentController.commentCreateUpdate);
+route.post("/get-task-comment",TaskCommentController.getCommentByTask);
 module.exports = route;

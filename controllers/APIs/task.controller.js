@@ -427,31 +427,3 @@ module.exports.getSingalTask = async function (req, res) {
             return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task ID." });
     }
 }
-//Create or Update Task Comment
-module.exports.commentCreateUpdate = async function (req, res) {
-    const TaskCommentModel = require("../../models/taskComment.model");
-    const { id: comment_id = '', comment, task_id, attachments=[] } = req.body;
-
-    if (comment_id && !await TaskCommentModel.checkCommentExists(comment_id))
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Comment ID" });
-    else if (!comment) 
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Comment field is required." });
-    else if (!comment_id && !task_id)
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Task ID field is required." });
-    else if (attachments && !Array.isArray(attachments)) 
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Attachment." });
-    else{
-        let data = {comment:comment,commented_by:req.user.id,updated:Math.floor(Date.now()/1000)};
-        if(task_id){
-            if(!await TaskModel.checkTaskExists(task_id))
-                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Task ID." });
-            else
-                data.task_id = task_id;
-        }
-        if(attachments.length>0)
-            data.attachments = attachments
-
-        let commentData = await TaskCommentModel.createUpdate(comment_id,data);
-        res.status(httpCode.OK).json({ code: httpCode.OK, message: "Comment Created.", data: commentData });
-    }
-}
