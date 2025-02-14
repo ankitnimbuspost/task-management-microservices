@@ -60,3 +60,21 @@ module.exports.getCommentByTask = async function(req,res){
         res.status(httpCode.OK).json({ code: httpCode.OK, message: "Comment fetched successfully.", data: comments });
     }
 }
+
+//Delete Comment by Task ID, and Message ID
+module.exports.deleteTaskComment = async function(req,res){
+    let {task_id,comment_id} = req.params;
+    
+    if (!task_id)
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Task ID field is required." });
+    else if(!await TaskModel.checkTaskExists(task_id))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Task ID." });
+    else if (!comment_id)
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Comment ID field is required." });
+    else if(!await TaskCommentModel.checkCommentExists(comment_id))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Comment ID." });
+    else{
+        await TaskCommentModel.findOneAndDelete({task_id:task_id,_id:comment_id});
+        res.status(httpCode.OK).json({ code: httpCode.OK, message: "Comment delete successfully."}); 
+    }
+}

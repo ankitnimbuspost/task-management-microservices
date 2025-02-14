@@ -17,4 +17,5 @@ route.post("/get-task-list",TaskController.getTaskList);
 route.get("/get-task/:task_id",TaskController.getSingalTask);
 route.post("/task-comment-create-update",TaskCommentController.commentCreateUpdate);
 route.post("/get-task-comment",TaskCommentController.getCommentByTask);
+route.get("/delete-task-comment/:task_id/:comment_id",TaskCommentController.deleteTaskComment);
 module.exports = route;
