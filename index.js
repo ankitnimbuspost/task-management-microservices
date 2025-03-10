@@ -4,7 +4,7 @@ require("dotenv").config();
 require("./config/database.config");
 require("./services/ApplicationLog");
 // require("./config/rabbitmq.config");
-const initUserSocket = require("./socket/UserSockets")
+const {initUserSocket} = require("./socket/UserSockets")
 const apiRoutes = require("./routes/api.route");
 const QueueController = require("./controllers/APIs/queue.controller")
 const app = express();

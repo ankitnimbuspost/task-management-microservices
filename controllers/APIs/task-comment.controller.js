@@ -19,13 +19,17 @@ module.exports.commentCreateUpdate = async function (req, res) {
         let data = {comment:comment,commented_by:req.user.id,updated:Math.floor(Date.now()/1000)};
         if(task_id){
             if(!await TaskModel.checkTaskExists(task_id))
-                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Task ID." });
+                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Task/Issue ID." });
             else
                 data.task_id = task_id;
         }
         if(attachments.length>0)
             data.attachments = attachments
 
+        log("task_update_notify","Task Update Notify",{
+            task_id: task_id,
+            section:"comment"
+        });
         let commentData = await TaskCommentModel.createUpdate(comment_id,data);
         res.status(httpCode.OK).json({ code: httpCode.OK, message: "Comment Created.", data: commentData });
     }

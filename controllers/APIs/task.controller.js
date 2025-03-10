@@ -1,123 +1,11 @@
 const httpCode = require("../../config/error.config");
 const ProjectModel = require("../../models/project.model");
-const ProjectAssignModel = require("../../models/projectAssign.model");
 const TaskModel = require("../../models/task.model");
-const mq_config = require("../../config/rabbitmq.config")
 const MQService = require("../../services/RabbitMQ.service");
 const Config = require("../../config/config");
 const TaskStatusModel = require("../../models/taskStatus.model");
 const config = require("../../config/config");
-const PanelLog = require("../../models/logs.model");
 
-
-// This Function Create or Update Project 
-module.exports.addProject = async function (req, res) {
-    let project_name = req.body['project_name'];
-    let project_desc = req.body['project_desc'];
-    let status = req.body['status'];
-    if (project_name == '' || project_name == null)
-        return res.json({ code: httpCode.BAD_REQUEST, "message": "Project Name field is required." });
-    else if (project_desc == '' || project_desc == null)
-        return res.json({ code: httpCode.BAD_REQUEST, "message": "Project Description field is required." });
-    else {
-        let current_user = await MQService.getDataFromM1({ action: "GET_USER_DETAILS", login_user: req.user.id });
-        let company_id = null;
-        if (current_user)
-            company_id = current_user.company_id;
-        let user_not_found = '';
-        let owners = [];
-        //Now Check Project Owners from Task Microservices
-        if (req.body['project_owners'] != undefined && req.body['project_owners'] != "") {
-            if (typeof req.body['project_owners'] != "object")
-                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Project Owners accept only array format` });
-
-            owners = [...new Set(req.body['project_owners'])];
-            let data = await MQService.getDataFromM1({ action: "CHECK_USER_EXISTS", login_user: req.user.id, data: owners });
-            // Now Check Task Owner ID one by one 
-            owners.forEach(function (element, index) {
-                if (data[`${element}`] == 0)
-                    user_not_found += element + ", ";
-            });
-            if (user_not_found != '')
-                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Project Owners ${user_not_found} users` });
-        }
-        try {
-            let project_id = '';
-            if (req.body['id'] != undefined && req.body['id'] != "") {
-                project_id = req.body['id'];
-                // Check Project exists or not 
-                let exists = await ProjectModel.countDocuments({ _id: project_id })
-                if (!exists)
-                    return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Project ID` });
-            }
-            let data = {
-                "user_id": req.user.id,
-                "company_id": company_id,
-                "project_name": project_name,
-                "project_desc": project_desc,
-                "project_owners": owners,
-                "status": status ? status : 1,
-                "updated": Math.floor(Date.now() / 1000)
-            }
-            let save = '';
-            let prev_data = {};
-            if (project_id == '') {
-                save = new ProjectModel(data);
-                await save.save();
-            }
-            else {
-                prev_data = await ProjectModel.findOne({ _id: project_id });
-                save = await ProjectModel.findOneAndUpdate({ _id: project_id }, { "$set": data }, { new: true });
-            }
-            // Create Log 
-            await PanelLog.createLog({
-                prev_data: prev_data,
-                current_data: save,
-                user_id: req.user.id,
-                action: "PROJECT_CRETAE_UPDATE"
-            });
-            res.json({ code: httpCode.OK, message: `Project ${project_id == '' ? 'created' : 'Updated'} successfully.`, data: save })
-        } catch (error) {
-            return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": error.message });
-        }
-    }
-}
-
-//This Function Assign existing Project to User
-module.exports.assignProject = async function (req, res) {
-    let project_id = req.body['project_id'];
-    let assigned_user_id = req.body['assigned_user_id'];
-    let status = req.body['status'];
-    if (project_id == '' || project_id == null)
-        return res.json({ code: httpCode.BAD_REQUEST, "message": "Project field is required." });
-    else if (assigned_user_id == '' || assigned_user_id == null)
-        return res.json({ code: httpCode.BAD_REQUEST, "message": "Assignee user field is required." });
-    else {
-        // Check Project Already Assigned or Not 
-        let exists = await ProjectAssignModel.findOne({ project_id: project_id, assigned_user_id: assigned_user_id });
-        if (exists) {
-            res.json({
-                code: httpCode.OK,
-                message: "Project already assigned.",
-            })
-        }
-        else {
-            let data = {
-                "user_id": req.user.id,
-                "project_id": project_id,
-                "assigned_user_id": assigned_user_id,
-                "status": status ? status : 1
-            }
-            let save = await new ProjectAssignModel(data);
-            save.save();
-            res.json({
-                code: httpCode.OK,
-                message: "Project assigned successfully.",
-                data: save
-            });
-        }
-    }
-}
 
 // This Function Create A new Task.
 module.exports.createTask = async function (req, res) {
@@ -177,8 +65,12 @@ module.exports.createTask = async function (req, res) {
             tags = req.body['tags'];
         let task_id = await MQService.getDataFromM1({ action: "GET_TASK_ID", login_user: req.user.id });
         if (!task_id)
-            return res.status(httpCode.NOT_ACCEPTABLE).json({ code: httpCode.NOT_ACCEPTABLE, message: "Please complete KYC." })
-
+            return res.status(httpCode.NOT_ACCEPTABLE).json({ code: httpCode.NOT_ACCEPTABLE, message: "Please complete KYC." });
+        let current_user = await MQService.getDataFromM1({ action: "GET_USER_DETAILS", login_user: req.user.id });
+        let company_id = null;
+        if (current_user)
+            company_id = current_user.company_id;
+        
         let data = {
             task_id: task_id,
             project_id: req.body['project_id'],
@@ -193,19 +85,22 @@ module.exports.createTask = async function (req, res) {
             priority: req.body['priority'] ? req.body['priority'] : "",
             duration: duration,
             owners: owners,
-            task_status: req.body['task_status']
+            task_status: req.body['task_status'],
+            company_id: company_id
         }
 
         let result = await TaskModel.create(data);
         // Create Log 
-        await PanelLog.createLog({
+        log("panel_log","TASK_CREATE_UPDATE",{
             prev_data: {},
             current_data: result,
             user_id: req.user.id,
             action: "TASK_CREATE_UPDATE"
         });
         if (result != null)
-            res.status(httpCode.OK).json({ code: httpCode.OK, message: "Task created successfully.", data: result })
+            res.status(httpCode.OK).json({ code: httpCode.OK, message: "Task created successfully.", data: result });
+        else
+            res.status(httpCode.INTERNAL_SERVER_ERROR).json({ code: httpCode.INTERNAL_SERVER_ERROR, message: "Something went wrong.", data: result })
     }
 }
 
@@ -313,7 +208,7 @@ module.exports.updateTask = async function (req, res) {
         updateData.updated = Math.floor(Date.now() / 1000);
         let result = await TaskModel.findOneAndUpdate({ _id: req.body['id'] }, { "$set": updateData }, { new: true });
         // Create Log 
-        await PanelLog.createLog({
+        log("panel_log","TASK_CREATE_UPDATE",{
             prev_data: prev_data,
             current_data: result,
             user_id: req.user.id,
@@ -347,12 +242,6 @@ module.exports.getTaskStatus = async function (req, res) {
     // })
 }
 
-//Get Projects Listing
-module.exports.getProjects = async function (req, res) {
-    let user_id = req.user.id;
-    let data = await ProjectModel.find({ project_owners: user_id, status: 1 }).select({ "project_name": 1, "project_desc": 1, "status": 1 });
-    res.status(httpCode.OK).json({ code: httpCode.OK, message: "Project Listing.", data: data });
-}
 //Get Tasks by Filter
 module.exports.getTaskList = async function (req, res) {
     let list_type = req.body['list_type'] ?? '';

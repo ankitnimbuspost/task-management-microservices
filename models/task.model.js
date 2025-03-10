@@ -13,6 +13,11 @@ const taskSchema = mongoose.Schema({
         required:true,
         ref:"projects",
     },
+    company_id:{
+        type:mongoose.Schema.Types.ObjectId,
+        required:false,
+        ref:"companies",
+    },
     added_by:{
         type:mongoose.Schema.Types.ObjectId,
         required:true,
