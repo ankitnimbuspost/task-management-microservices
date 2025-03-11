@@ -5,6 +5,7 @@ const QueueController = require("../controllers/APIs/queue.controller");
 const TaskController = require("../controllers/APIs/task.controller")
 const TaskCommentController = require("../controllers/APIs/task-comment.controller")
 const ProjecController = require("../controllers/APIs/project.controller");
+const TaskActivityController = require("../controllers/APIs/task-activity.controller");
 route.use("/",APIMiddleware.checkJWTToken);
 
 route.get("/test",QueueController.test);
@@ -13,6 +14,8 @@ route.get("/get-project/:project_id",ProjecController.getProject);
 route.post("/assign-project",ProjecController.assignProject);
 route.get("/get-active-projects",ProjecController.getActiveProjects);
 route.get("/get-all-projects",ProjecController.getAllProjects);
+
+route.get("/get-task-history/:task_id",TaskActivityController.getTaskHistory);
 
 route.post("/create-task",TaskController.createTask);
 route.post("/update-task",TaskController.updateTask);

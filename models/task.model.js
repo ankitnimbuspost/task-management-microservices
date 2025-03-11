@@ -103,9 +103,9 @@ taskSchema.statics.countTasks = async function(user_id) {
 //Check task exists or not
 taskSchema.statics.checkTaskExists = async function(task_id){
     try {
-        const task = await this.findOne({_id:task_id});
-        return !!task;
+        return await this.exists({ _id: `${task_id}` });
     } catch (error) {
+        console.log(error.message)
         return false;
     }
 }

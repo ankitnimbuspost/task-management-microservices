@@ -4,7 +4,6 @@ const TaskModel = require("../../models/task.model");
 const MQService = require("../../services/RabbitMQ.service");
 const Config = require("../../config/config");
 const TaskStatusModel = require("../../models/taskStatus.model");
-const config = require("../../config/config");
 
 
 // This Function Create A new Task.
@@ -150,11 +149,17 @@ module.exports.updateTask = async function (req, res) {
         if (req.body['owners'] != undefined && req.body['owners'] != "") {
             owners = req.body['owners'];
             updateData.owners = owners;
-            let data = await MQService.getDataFromM1({ action: "CHECK_USER_EXISTS", login_user: req.user.id, data: owners });
+            let data = {};
+            try {
+                data = await MQService.getDataFromM1({ action: "CHECK_USER_EXISTS", login_user: req.user.id, data: owners });
+            } catch (error) {
+                console.log(error.message);
+                return res.status(httpCode.INTERNAL_SERVER_ERROR).json({ code: httpCode.INTERNAL_SERVER_ERROR, "message": "Something went wrong while fetching user details." });
+            }
             // Now Check Task Owner ID one by one 
             let user_not_found = '';
             owners.forEach(function (element, index) {
-                if (data[`${element}`] == 0)
+                if (data[`${element}`] == 0 || data[`${element}`]==undefined)
                     user_not_found += element + ", ";
             });
             if (user_not_found != '')
@@ -278,7 +283,7 @@ module.exports.getTaskList = async function (req, res) {
             .populate({ path: "owners", select: "f_name l_name" }).sort({ "_id": -1 }).lean();
 
         let groupedTasks = {};
-        let all_task_status = config.TASK_STATUS;
+        let all_task_status = Config.TASK_STATUS;
         // groupedTasks[`${status}`] = [];
         all_task_status.forEach(status => {
             if (groupedTasks[`${status}`] == null)
