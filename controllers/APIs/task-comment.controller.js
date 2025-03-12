@@ -37,24 +37,27 @@ module.exports.commentCreateUpdate = async function (req, res) {
 
 //Get Task Comments by Task ID(_id)
 module.exports.getCommentByTask = async function(req,res){
-    let {task_id='',all=false,previous_list_count=0} = req.body;
-   
+    let {all="false",skip=0} = req.headers;
+    all = all.toLowerCase();
+    let task_id = req.params['task_id']?.trim() ?? '';
     if (!task_id)
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Task ID field is required." });
     else if(task_id && !await TaskModel.checkTaskExists(task_id))
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Task ID." });
-    else if(all==true && !Number.isInteger(Number(previous_list_count)))
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Previous list count must be interger." });
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Task/Issue ID." });
+    else if(all && !["true","false"].includes(all))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: `Invalid All params value, Allowed values are [${["true","false"]}].` });
+    else if(all=="true" && !Number.isInteger(Number(skip)))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Skip count must be interger." });
     else{
         let filter = {task_id:task_id}
         let limit=30;
-        if(all==true)
+        if(all==true || all=="true")
             limit=0;
         else
-            previous_list_count=0;
+            skip=0;
 
         let comments = await TaskCommentModel.find(filter).populate({path:"commented_by",select:"f_name l_name"})
-        .limit(limit).skip(previous_list_count).sort({created:-1}).lean().exec();
+        .limit(limit).skip(skip).sort({created:-1}).lean().exec();
         // Convert Timestapm to Proper Date 
         comments = comments.map(comment => ({
             ...comment,

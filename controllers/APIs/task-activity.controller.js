@@ -11,8 +11,10 @@ module.exports.getTaskHistory = async function(req,res){
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Task ID field is required." });
     else if(task_id && !await TaskModel.checkTaskExists(task_id))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Task/Issue ID." });
+    else if(all && !["true","false"].includes(all))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: `Invalid All params value, Allowed values are [${["true","false"]}].` });
     else if(all==="true" && !Number.isInteger(Number(skip)))
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Previous list count must be interger." });
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Skip count must be interger." });
     else{
         let filter = {task_id:task_id}
         let limit=30;
