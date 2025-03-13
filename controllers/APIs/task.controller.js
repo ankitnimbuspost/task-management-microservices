@@ -18,8 +18,10 @@ module.exports.createTask = async function (req, res) {
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Task Description field is required." });
     else if (req.body['status'] != undefined && req.body['status'] != '' && ![1, 0].includes(req.body['status']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Project status, Allowed values are [0,1]." });
-    else if (req.body['tags'] != undefined && typeof req.body['tags'] != "object")
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task tags." });
+    else if (req.body['tags'] != undefined && (!Array.isArray(req.body['tags']) || req.body['tags'].some(item => typeof item !== 'string')))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Tags. It must be an array of strings." });
+    else if (req.body['attachment_urls'] != undefined && (!Array.isArray(req.body['attachment_urls']) || req.body['attachment_urls'].some(item => typeof item !== 'string')))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Attachment URLs. It must be an array of strings." });
     else if (req.body['owners'] != undefined && typeof req.body['owners'] != "object")
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task owners." });
     else if (req.body['duration'] != undefined && typeof req.body['duration'] != "object")
@@ -32,6 +34,10 @@ module.exports.createTask = async function (req, res) {
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Task status field is required." });
     else if (!Config.TASK_STATUS.includes(req.body['task_status']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid task status." });
+    else if (req.body['start_date'] !== undefined && req.body['start_date'] !== "" && (!Number.isInteger(Number(req.body['start_date'])) || Number(req.body['start_date']) <= 0))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Start Date. It must be a valid epoch timestamp."});
+    else if (req.body['due_date'] !== undefined && req.body['due_date'] !== "" && (!Number.isInteger(Number(req.body['due_date'])) || Number(req.body['due_date']) <= 0))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Due Date. It must be a valid epoch timestamp."});
     else {
         let duration = [];
         if (req.body['duration'] != undefined && req.body['duration'] != "") {
@@ -40,6 +46,8 @@ module.exports.createTask = async function (req, res) {
                 return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task Duration field structure." });
             else if (!(duration.unit.toLowerCase() == 'days' || duration.unit.toLowerCase() == 'hours'))
                 return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task Duration Unit, Allowed values are [Days,Hours]." });
+            else
+                duration.unit = duration.unit.toLowerCase();
         }
         if (req.body['complete_per'] != undefined && req.body['complete_per'] != "") {
             if (req.body['complete_per'] > 100 || req.body['complete_per'] < 0)
@@ -59,33 +67,28 @@ module.exports.createTask = async function (req, res) {
             if (user_not_found != '')
                 return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Project Owners ${user_not_found} users` });
         }
-        let tags = [];
-        if (req.body['tags'] != undefined)
-            tags = req.body['tags'];
         let task_id = await MQService.getDataFromM1({ action: "GET_TASK_ID", login_user: req.user.id });
         if (!task_id)
             return res.status(httpCode.NOT_ACCEPTABLE).json({ code: httpCode.NOT_ACCEPTABLE, message: "Please complete KYC." });
         let current_user = await MQService.getDataFromM1({ action: "GET_USER_DETAILS", login_user: req.user.id });
-        let company_id = null;
-        if (current_user)
-            company_id = current_user.company_id;
-        
+            
         let data = {
             task_id: task_id,
             project_id: req.body['project_id'],
             added_by: req.user.id,
             task_name: req.body['task_name'],
             task_desc: req.body['task_desc'],
-            status: req.body['status'] ? req.body['status'] : 1,
-            tags: tags,
-            start_date: req.body['start_date'] ? req.body['start_date'] : "",
-            due_date: req.body['due_date'] ? req.body['due_date'] : "",
-            complete_per: req.body['complete_per'] ? req.body['complete_per'] : '',
-            priority: req.body['priority'] ? req.body['priority'] : "",
+            status: req.body['status'] ??  1,
+            tags: req.body['tags'] ?? [],
+            start_date: req.body['start_date'] ?? null,
+            due_date: req.body['due_date'] ?? null,
+            complete_per: req.body['complete_per'] ?? '',
+            priority: req.body['priority'] ?? "",
             duration: duration,
             owners: owners,
-            task_status: req.body['task_status'],
-            company_id: company_id
+            task_status: req.body['task_status'] ?? "",
+            company_id: current_user?.company_id || null,
+            attachment_urls : req.body['attachment_urls'] ?? [],
         }
 
         let result = await TaskModel.create(data);
@@ -105,6 +108,7 @@ module.exports.createTask = async function (req, res) {
 
 //This Function Update existing Task
 module.exports.updateTask = async function (req, res) {
+    const {  owners } = req.body;
     let updateData = {};
     if (req.body['id'] == '' || req.body['id'] == null)
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Task ID field is required." });
@@ -116,10 +120,16 @@ module.exports.updateTask = async function (req, res) {
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task duration." });
     else if (req.body['tags'] != undefined && typeof req.body['tags'] != "object")
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task tags." });
+    else if (req.body['attachment_urls'] != undefined && (!Array.isArray(req.body['attachment_urls']) || req.body['attachment_urls'].some(item => typeof item !== 'string')))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Attachment URLs. It must be an array of strings." });
     else if (req.body['priority'] != undefined && req.body['priority'] != '' && !['', 'High', 'Medium', 'Low'].includes(req.body['priority']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Project priority, Allowed values are ['','High','Medium','Low']." });
     else if (req.body['task_status'] != undefined && req.body['task_status'] != '' && !Config.TASK_STATUS.includes(req.body['task_status']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Task Status, Allowed values are [${Config.TASK_STATUS}].` });
+    else if (req.body['start_date'] !== undefined && req.body['start_date'] !== "" && (!Number.isInteger(Number(req.body['start_date'])) || Number(req.body['start_date']) <= 0))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Start Date. It must be a valid epoch timestamp."});
+    else if (req.body['due_date'] !== undefined && req.body['due_date'] !== "" && (!Number.isInteger(Number(req.body['due_date'])) || Number(req.body['due_date']) <= 0))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Due Date. It must be a valid epoch timestamp."});
     else {
         if (req.body['status'] || req.body['status'] == 0) {
             if (typeof req.body['status'] == "number" && [1, 0].includes(req.body['status']))
@@ -138,32 +148,20 @@ module.exports.updateTask = async function (req, res) {
             duration = req.body['duration'];
             if (!duration.unit || !duration.value || typeof duration.unit != "string" || typeof duration.value != "number")
                 return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task Duration field structure." });
-            else if (duration.unit.toLowerCase() == 'days' || duration.unit.toLowerCase() == 'hours')
+            else if (duration.unit.toLowerCase() == 'days' || duration.unit.toLowerCase() == 'hours'){
+                duration.unit = duration.unit.toLowerCase();
                 updateData.duration = duration;
+            }
             else
                 return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task Duration Unit, Allowed values are [Days,Hours]." });
         }
         let prev_data = await TaskModel.findOne({ _id: req.body['id'] });
-        let owners = [];
-        //Now Check Project Owners from Task Microservices
-        if (req.body['owners'] != undefined && req.body['owners'] != "") {
-            owners = req.body['owners'];
-            updateData.owners = owners;
-            let data = {};
-            try {
-                data = await MQService.getDataFromM1({ action: "CHECK_USER_EXISTS", login_user: req.user.id, data: owners });
-            } catch (error) {
-                console.log(error.message);
-                return res.status(httpCode.INTERNAL_SERVER_ERROR).json({ code: httpCode.INTERNAL_SERVER_ERROR, "message": "Something went wrong while fetching user details." });
-            }
-            // Now Check Task Owner ID one by one 
-            let user_not_found = '';
-            owners.forEach(function (element, index) {
-                if (data[`${element}`] == 0 || data[`${element}`]==undefined)
-                    user_not_found += element + ", ";
-            });
-            if (user_not_found != '')
-                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Project Owners ${user_not_found}users` });
+        // Now Check Project Owners from Task Microservices
+        if (owners && owners !== "") {
+            const ownerValidation = await MQService.getDataFromM1({ action: "CHECK_USER_EXISTS", login_user: req.user.id, data: owners });
+            const invalidOwners = owners.filter(owner => !ownerValidation[owner]);
+            if (invalidOwners.length)
+                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: `Invalid Project Owners: ${invalidOwners.join(", ")}` });
         }
         if (req.body['tags'])
             updateData.tags = req.body['tags'];
@@ -171,6 +169,10 @@ module.exports.updateTask = async function (req, res) {
             updateData.attachment_urls = req.body['attachment_urls'];
         if (req.body['priority'])
             updateData.priority = req.body['priority'];
+        if(req.body['start_date'])
+            updateData.start_date = req.body['start_date'];
+        if(req.body['due_date'])
+            updateData.due_date = req.body['due_date'];
         if (req.body['task_status']){
             updateData.task_status = req.body['task_status'];
             // now create activity log for task status 
