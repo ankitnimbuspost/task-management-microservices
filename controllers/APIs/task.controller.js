@@ -8,36 +8,62 @@ const TaskStatusModel = require("../../models/taskStatus.model");
 
 // This Function Create A new Task.
 module.exports.createTask = async function (req, res) {
+    let {task_type,owners,parent_task_id} = req.body;
+    task_type = task_type?.toLowerCase() ?? '';
+
     if (req.body['project_id'] == '' || req.body['project_id'] == null)
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Project field is required." });
+
     else if (! await ProjectModel.checkProjectExists(req.body['project_id']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Project, project not found." });
+
     else if (req.body['task_name'] == '' || req.body['task_name'] == null)
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Task Name field is required." });
+
     else if (req.body['task_desc'] == '' || req.body['task_desc'] == null)
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Task Description field is required." });
+
     else if (req.body['status'] != undefined && req.body['status'] != '' && ![1, 0].includes(req.body['status']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Project status, Allowed values are [0,1]." });
+
     else if (req.body['tags'] != undefined && (!Array.isArray(req.body['tags']) || req.body['tags'].some(item => typeof item !== 'string')))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Tags. It must be an array of strings." });
+
     else if (req.body['attachment_urls'] != undefined && (!Array.isArray(req.body['attachment_urls']) || req.body['attachment_urls'].some(item => typeof item !== 'string')))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Attachment URLs. It must be an array of strings." });
+
     else if (req.body['owners'] != undefined && typeof req.body['owners'] != "object")
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task owners." });
+
     else if (req.body['duration'] != undefined && typeof req.body['duration'] != "object")
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task Duration." });
+
     else if (req.body['complete_per'] != undefined && req.body['complete_per'] != '' && typeof req.body['complete_per'] != "number")
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Project Completed persentage." });
+
     else if (req.body['priority'] != undefined && req.body['priority'] != '' && !['', 'High', 'Medium', 'Low'].includes(req.body['priority']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Project priority, Allowed values are ['','High','Medium','Low']." });
+
     else if (req.body['task_status'] != undefined && req.body['task_status'] == '')
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Task status field is required." });
+
     else if (!Config.TASK_STATUS.includes(req.body['task_status']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid task status." });
+
     else if (req.body['start_date'] !== undefined && req.body['start_date'] !== "" && (!Number.isInteger(Number(req.body['start_date'])) || Number(req.body['start_date']) <= 0))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Start Date. It must be a valid epoch timestamp."});
+
     else if (req.body['due_date'] !== undefined && req.body['due_date'] !== "" && (!Number.isInteger(Number(req.body['due_date'])) || Number(req.body['due_date']) <= 0))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Due Date. It must be a valid epoch timestamp."});
+
+    else if(task_type!=="" && !Config.TASK_TYPES.includes(task_type))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Task type, Allowed values are [${Config.TASK_TYPES}].` });
+
+    else if(task_type && task_type!=="task" && !parent_task_id)
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Parent Task ID field is required.` });
+    
+    else if(task_type!=="task" && parent_task_id && ! await TaskModel.checkTaskExists(parent_task_id))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Parent Task ID.` });
     else {
         let duration = [];
         if (req.body['duration'] != undefined && req.body['duration'] != "") {
@@ -53,20 +79,14 @@ module.exports.createTask = async function (req, res) {
             if (req.body['complete_per'] > 100 || req.body['complete_per'] < 0)
                 return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task Completed persentage, Allowed values are [0-100]." });
         }
-        let owners = [];
         //Now Check Project Owners from Task Microservices
-        if (req.body['owners'] != undefined && req.body['owners'] != "") {
-            owners = req.body['owners'];
-            let data = await MQService.getDataFromM1({ action: "CHECK_USER_EXISTS", login_user: req.user.id, data: owners });
-            // Now Check Task Owner ID one by one 
-            let user_not_found = '';
-            owners.forEach(function (element, index) {
-                if (data[`${element}`] == 0)
-                    user_not_found += element + ", ";
-            });
-            if (user_not_found != '')
-                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Project Owners ${user_not_found} users` });
+        if (owners && owners !== "") {
+            const ownerValidation = await MQService.getDataFromM1({ action: "CHECK_USER_EXISTS", login_user: req.user.id, data: owners });
+            const invalidOwners = owners.filter(owner => !ownerValidation[owner]);
+            if (invalidOwners.length)
+                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: `Invalid Task Owners: ${invalidOwners.join(", ")}` });
         }
+
         let task_id = await MQService.getDataFromM1({ action: "GET_TASK_ID", login_user: req.user.id });
         if (!task_id)
             return res.status(httpCode.NOT_ACCEPTABLE).json({ code: httpCode.NOT_ACCEPTABLE, message: "Please complete KYC." });
@@ -77,6 +97,8 @@ module.exports.createTask = async function (req, res) {
             project_id: req.body['project_id'],
             added_by: req.user.id,
             task_name: req.body['task_name'],
+            task_type : task_type ?? "task",
+            parent_task_id: task_type !== "task" && parent_task_id != null ? parent_task_id : null,
             task_desc: req.body['task_desc'],
             status: req.body['status'] ??  1,
             tags: req.body['tags'] ?? [],
@@ -91,15 +113,8 @@ module.exports.createTask = async function (req, res) {
             attachment_urls : req.body['attachment_urls'] ?? [],
         }
 
-        let result = await TaskModel.create(data);
-        // Create Log 
-        log("panel_log","TASK_CREATE_UPDATE",{
-            prev_data: {},
-            current_data: result,
-            user_id: req.user.id,
-            action: "TASK_CREATE_UPDATE"
-        });
-        if (result != null)
+        let result = await TaskModel.createTask(req.user.id,data);
+        if (result)
             res.status(httpCode.OK).json({ code: httpCode.OK, message: "Task created successfully.", data: result });
         else
             res.status(httpCode.INTERNAL_SERVER_ERROR).json({ code: httpCode.INTERNAL_SERVER_ERROR, message: "Something went wrong.", data: result })
@@ -108,28 +123,41 @@ module.exports.createTask = async function (req, res) {
 
 //This Function Update existing Task
 module.exports.updateTask = async function (req, res) {
-    const {  owners } = req.body;
+    const {  owners, labels,tags} = req.body;
     let updateData = {};
+
     if (req.body['id'] == '' || req.body['id'] == null)
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Task ID field is required." });
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Task/Issue ID field is required." });
+
     else if (! await TaskModel.checkTaskExists(req.body['id']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task ID, task not found." });
-    else if (req.body['owners'] != undefined && typeof req.body['owners'] != "object")
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task owners." });
+
+    else if (owners != undefined && (!Array.isArray(owners) || owners.some(item => typeof item !== 'string')))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Owners. It must be an array of strings." });
+
     else if (req.body['duration'] != undefined && typeof req.body['duration'] != "object")
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task duration." });
-    else if (req.body['tags'] != undefined && typeof req.body['tags'] != "object")
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task tags." });
+
+    else if (tags != undefined && (!Array.isArray(tags) || tags.some(item => typeof item !== 'string')))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Tags. It must be an array of strings." });
+
     else if (req.body['attachment_urls'] != undefined && (!Array.isArray(req.body['attachment_urls']) || req.body['attachment_urls'].some(item => typeof item !== 'string')))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Attachment URLs. It must be an array of strings." });
+
     else if (req.body['priority'] != undefined && req.body['priority'] != '' && !['', 'High', 'Medium', 'Low'].includes(req.body['priority']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Project priority, Allowed values are ['','High','Medium','Low']." });
+
     else if (req.body['task_status'] != undefined && req.body['task_status'] != '' && !Config.TASK_STATUS.includes(req.body['task_status']))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Task Status, Allowed values are [${Config.TASK_STATUS}].` });
+
     else if (req.body['start_date'] !== undefined && req.body['start_date'] !== "" && (!Number.isInteger(Number(req.body['start_date'])) || Number(req.body['start_date']) <= 0))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Start Date. It must be a valid epoch timestamp."});
+
     else if (req.body['due_date'] !== undefined && req.body['due_date'] !== "" && (!Number.isInteger(Number(req.body['due_date'])) || Number(req.body['due_date']) <= 0))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: "Invalid Due Date. It must be a valid epoch timestamp."});
+
+    else if (labels && (!Array.isArray(labels) || labels.some(item => typeof item !== 'string')))
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Label. Allowed values are [${Config.TASK_TYPES}]` });
     else {
         if (req.body['status'] || req.body['status'] == 0) {
             if (typeof req.body['status'] == "number" && [1, 0].includes(req.body['status']))
@@ -163,8 +191,8 @@ module.exports.updateTask = async function (req, res) {
             if (invalidOwners.length)
                 return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: `Invalid Project Owners: ${invalidOwners.join(", ")}` });
         }
-        if (req.body['tags'])
-            updateData.tags = req.body['tags'];
+        if (tags)
+            updateData.tags = tags;
         if (req.body['attachment_urls'])
             updateData.attachment_urls = req.body['attachment_urls'];
         if (req.body['priority'])
@@ -186,6 +214,8 @@ module.exports.updateTask = async function (req, res) {
                 });
             }
         }
+        if(labels)
+            updateData.labels = labels;
         if(req.body['task_name']){
             updateData.task_name = req.body['task_name'];
             // now create activity log for task status 
