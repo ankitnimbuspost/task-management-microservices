@@ -2,6 +2,7 @@ const SocketIo = require("socket.io");
 const jwt = require('jsonwebtoken');
 const Middleware = require("../middleware/socket.middleware");
 const TaskModel = require("../models/task.model");
+const redisClient = require("../config/redis.config")
 
 const activeUsers = new Map(); 
 let io;
@@ -15,9 +16,14 @@ function initUserSocket(server) {
         }
     });
     io.use((socket,next)=>Middleware.authenticateUsers(socket,next))
-    io.on("connection",(socket)=>{
-        activeUsers.set(socket.decoded.id, socket.id);
-        console.log(`A New user connected with Socket ID: ${socket.id}`);
+    ensureRedisConnected().then().catch((e)=>console.log(e.message));
+    io.on("connection",async(socket)=>{
+        console.log(`A New user connected with Socket ID: ${socket.id} and User ID: ${socket.decoded.id}`);
+        if (!redisClient.isOpen) {
+            await redisClient.connect(); // Ensure Redis is connected
+        }
+        await redisClient.sAdd(`socket_user:${socket.decoded.id}`, socket.id);
+
         //Start --------------- Get Task Details Event -------------------
         socket.on("task_details",(request)=>{
             let task_id = request.task_id ?? '';
@@ -29,8 +35,7 @@ function initUserSocket(server) {
         socket.on("join_task", async ({ task_id }) => {
             if (!task_id) return;
             try {
-                const rooms = Array.from(socket.rooms);
-                if (rooms.includes(`task_${task_id}`)) {
+                if (socket.rooms.has(`room_task_${task_id}`)) {
                     console.log(`Socket ${socket.id} is already in room task_${task_id}`);
                     return; // Prevent unnecessary Re-Joins
                 }
@@ -73,18 +78,28 @@ function initUserSocket(server) {
             }
         });
     
-        socket.on("disconnect",()=>{
-            for (let [userId, socketId] of activeUsers.entries()) {
-                if (socketId === socket.id) {
-                    activeUsers.delete(userId);
-                    console.log(`User ${userId} removed from active users`);
-                    break; // Stop looping once found
-                }
+        socket.on("disconnect",async()=>{
+            const userId = socket.decoded.id;
+            if (!userId)
+                return false;
+            // Directly remove the socket ID from the user's set
+            await redisClient.sRem(`socket_user:${userId}`, socket.id);
+            const remainingSockets = await redisClient.sMembers(`socket_user:${userId}`);
+            if (remainingSockets.length === 0) {
+                await redisClient.del(`socket_user:${userId}`);
             }
             console.log(`User disconnected with Socket ID: ${socket.id}`);
         })
     });
     return io; 
+}
+
+
+async function ensureRedisConnected() {
+    if (!redisClient.isOpen) {
+        await redisClient.connect();
+        console.log("Connected to Redis");
+    }
 }
 
 module.exports = { initUserSocket, activeUsers, getIo: () => io };
