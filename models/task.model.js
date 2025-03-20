@@ -26,6 +26,11 @@ const taskSchema = mongoose.Schema({
         required: true,
         ref: "users",
     },
+    reporter: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "users",
+        default:null
+    },
     owners: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: "users",
@@ -121,19 +126,12 @@ taskSchema.index({ task_status: 1 });
 
 
 //Static method to create ("feature", "bug", "improvement", "task" )
-taskSchema.statics.createTask = async function (user_id,data) {
+taskSchema.statics.createTask = async function (data) {
     if (!data) {
         return false;
     }
     try {
         let result = await TaskModel.create(data);
-        // Create Log 
-        log("panel_log", "TASK_CREATE_UPDATE", {
-            prev_data: {},
-            current_data: result,
-            user_id: user_id,
-            action: "TASK_CREATE_UPDATE"
-        });
         return result;
     } catch (error) {
         console.log(error.message);

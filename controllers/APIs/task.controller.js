@@ -4,11 +4,12 @@ const TaskModel = require("../../models/task.model");
 const MQService = require("../../services/RabbitMQ.service");
 const Config = require("../../config/config");
 const TaskStatusModel = require("../../models/taskStatus.model");
+const TaskServices = require("../../services/TaskServices")
 
 
 // This Function Create A new Task.
 module.exports.createTask = async function (req, res) {
-    let {task_type,owners,parent_task_id} = req.body;
+    let {task_type,owners,parent_task_id,reporter_id} = req.body;
     task_type = task_type?.toLowerCase() ?? '';
 
     if (req.body['project_id'] == '' || req.body['project_id'] == null)
@@ -64,6 +65,8 @@ module.exports.createTask = async function (req, res) {
     
     else if(task_type!=="task" && parent_task_id && ! await TaskModel.checkTaskExists(parent_task_id))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Parent Task ID.` });
+    else if(!reporter_id || reporter_id==undefined)
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Reporter ID field is required." });
     else {
         let duration = [];
         if (req.body['duration'] != undefined && req.body['duration'] != "") {
@@ -79,21 +82,8 @@ module.exports.createTask = async function (req, res) {
             if (req.body['complete_per'] > 100 || req.body['complete_per'] < 0)
                 return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task Completed persentage, Allowed values are [0-100]." });
         }
-        //Now Check Project Owners from Task Microservices
-        if (owners && owners !== "") {
-            const ownerValidation = await MQService.getDataFromM1({ action: "CHECK_USER_EXISTS", login_user: req.user.id, data: owners });
-            const invalidOwners = owners.filter(owner => !ownerValidation[owner]);
-            if (invalidOwners.length)
-                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: `Invalid Task Owners: ${invalidOwners.join(", ")}` });
-        }
-
-        let task_id = await MQService.getDataFromM1({ action: "GET_TASK_ID", login_user: req.user.id });
-        if (!task_id)
-            return res.status(httpCode.NOT_ACCEPTABLE).json({ code: httpCode.NOT_ACCEPTABLE, message: "Please complete KYC." });
-        let current_user = await MQService.getDataFromM1({ action: "GET_USER_DETAILS", login_user: req.user.id });
-            
+        
         let data = {
-            task_id: task_id,
             project_id: req.body['project_id'],
             added_by: req.user.id,
             task_name: req.body['task_name'],
@@ -105,32 +95,29 @@ module.exports.createTask = async function (req, res) {
             start_date: req.body['start_date'] ?? null,
             due_date: req.body['due_date'] ?? null,
             complete_per: req.body['complete_per'] ?? '',
-            priority: req.body['priority'] ?? "",
+            priority: req.body['priority']?.toLowerCase() ?? "",
             duration: duration,
             owners: owners,
+            reporter: (reporter_id!=undefined && reporter_id!='') ? reporter_id : null,
             task_status: req.body['task_status'] ?? "",
-            company_id: current_user?.company_id || null,
             attachment_urls : req.body['attachment_urls'] ?? [],
         }
 
-        let result = await TaskModel.createTask(req.user.id,data);
-        if (result)
-            res.status(httpCode.OK).json({ code: httpCode.OK, message: "Task created successfully.", data: result });
-        else
-            res.status(httpCode.INTERNAL_SERVER_ERROR).json({ code: httpCode.INTERNAL_SERVER_ERROR, message: "Something went wrong.", data: result })
+        let result = await TaskServices.createTask(req.user.id,data);
+        res.status(result.code).json({ code: httpCode.OK, message: result.message, data: result.data });
     }
 }
 
 //This Function Update existing Task
 module.exports.updateTask = async function (req, res) {
-    const {  owners, labels,tags} = req.body;
+    const {  owners, labels,tags,reporter_id} = req.body;
     let updateData = {};
 
     if (req.body['id'] == '' || req.body['id'] == null)
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Task/Issue ID field is required." });
 
     else if (! await TaskModel.checkTaskExists(req.body['id']))
-        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task ID, task not found." });
+        return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task/Issue ID." });
 
     else if (owners != undefined && (!Array.isArray(owners) || owners.some(item => typeof item !== 'string')))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Owners. It must be an array of strings." });
@@ -183,14 +170,9 @@ module.exports.updateTask = async function (req, res) {
             else
                 return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": "Invalid Task Duration Unit, Allowed values are [Days,Hours]." });
         }
-        let prev_data = await TaskModel.findOne({ _id: req.body['id'] });
-        // Now Check Project Owners from Task Microservices
-        if (owners && owners !== "") {
-            const ownerValidation = await MQService.getDataFromM1({ action: "CHECK_USER_EXISTS", login_user: req.user.id, data: owners });
-            const invalidOwners = owners.filter(owner => !ownerValidation[owner]);
-            if (invalidOwners.length)
-                return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, message: `Invalid Project Owners: ${invalidOwners.join(", ")}` });
-        }
+        if(reporter_id!=undefined && reporter_id!='')
+            updateData.reporter = reporter_id;
+        
         if (tags)
             updateData.tags = tags;
         if (req.body['attachment_urls'])
@@ -201,58 +183,17 @@ module.exports.updateTask = async function (req, res) {
             updateData.start_date = req.body['start_date'];
         if(req.body['due_date'])
             updateData.due_date = req.body['due_date'];
-        if (req.body['task_status']){
+        if (req.body['task_status'])
             updateData.task_status = req.body['task_status'];
-            // now create activity log for task status 
-            if(prev_data.task_status!=req.body.task_status){
-                log("task_activity","Task Update",{
-                    task_id: req.body.id,
-                    before: prev_data.task_status,
-                    after: req.body.task_status,
-                    added_by: req.user.id,
-                    update_subject:"status"
-                });
-            }
-        }
         if(labels)
             updateData.labels = labels;
-        if(req.body['task_name']){
+        if(req.body['task_name'])
             updateData.task_name = req.body['task_name'];
-            // now create activity log for task status 
-            if(req.body.task_name!=prev_data.task_name){
-                log("task_activity","Task Update",{
-                    task_id: req.body.id,
-                    before: prev_data.task_name,
-                    after: req.body.task_name,
-                    added_by: req.user.id,
-                    update_subject:"summary"
-                });
-            }
-        }
-        if(req.body['task_desc']){
+        if(req.body['task_desc'])
             updateData.task_desc = req.body['task_desc'];
-            // now create activity log for task status 
-            if(req.body.task_desc!=prev_data.task_desc){
-                log("task_activity","Task Update",{
-                    task_id: req.body.id,
-                    before: prev_data.task_desc,
-                    after: req.body.task_desc,
-                    added_by: req.user.id,
-                    update_subject:"description"
-                });
-            }
-        }
         updateData.updated = Math.floor(Date.now() / 1000);
-        let result = await TaskModel.findOneAndUpdate({ _id: req.body['id'] }, { "$set": updateData }, { new: true });
-        // Create Log 
-        log("panel_log","TASK_CREATE_UPDATE",{
-            prev_data: prev_data,
-            current_data: result,
-            user_id: req.user.id,
-            action: "TASK_CREATE_UPDATE"
-        });
-        if (result != null)
-            res.status(httpCode.OK).json({ code: httpCode.OK, message: "Task updated successfully.", data: result })
+        let result = await TaskServices.updateTask(req.user.id,req.body['id'],updateData);
+        res.status(result.code).json({ code: result.code, message: result.message, data: result.data })
     }
 
 
