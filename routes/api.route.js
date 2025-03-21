@@ -15,8 +15,7 @@ route.post("/assign-project",ProjecController.assignProject);
 route.get("/get-active-projects",ProjecController.getActiveProjects);
 route.get("/get-all-projects",ProjecController.getAllProjects);
 
-route.get("/get-task-history/:task_id",TaskActivityController.getTaskHistory);
-
+// Tasks Routes 
 route.post("/create-task",TaskController.createTask);
 route.post("/update-task",TaskController.updateTask);
 route.get("/get-task-status",TaskController.getTaskStatus);
@@ -24,5 +23,9 @@ route.post("/get-task-list",TaskController.getTaskList);
 route.get("/get-task/:task_id",TaskController.getSingalTask);
 route.post("/task-comment-create-update",TaskCommentController.commentCreateUpdate);
 route.get("/get-task-comment/:task_id",TaskCommentController.getCommentByTask);
+route.get("/get-task-history/:task_id",TaskActivityController.getTaskHistory);
 route.get("/delete-task-comment/:task_id/:comment_id",TaskCommentController.deleteTaskComment);
+
+//Config Routes
+
 module.exports = route;

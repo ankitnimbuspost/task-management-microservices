@@ -159,7 +159,7 @@ module.exports.getProject = async function(req,res){
     if (!await ProjectModel.checkProjectExists({ _id: project_id }))
         return res.status(httpCode.BAD_REQUEST).json({ code: httpCode.BAD_REQUEST, "message": `Invalid Project ID` });
     else{
-
+        let project = await ProjectModel.findOne({_id:project_id});
+        return res.status(httpCode.OK).json({ code: httpCode.OK, message: "Project Details.", data: project });
     }
-    res.send("ok");
 }

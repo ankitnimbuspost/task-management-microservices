@@ -4,7 +4,7 @@ const TaskModel = require("../../models/task.model");
 const MQService = require("../../services/RabbitMQ.service");
 const Config = require("../../config/config");
 const TaskStatusModel = require("../../models/taskStatus.model");
-const TaskServices = require("../../services/TaskServices")
+const TaskServices = require("../../services/TaskServices");
 
 
 // This Function Create A new Task.
